@@ -63,6 +63,10 @@ async def chat_completions(request: ChatCompletionRequest):
 async def health():
     return {"status": "ok", "target": BASE_URL, "model": MODEL_NAME}
 
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
+
 @app.on_event("startup")
 async def startup_event():
     logger.info("Starting Lexika proxy...")
