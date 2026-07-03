@@ -155,7 +155,10 @@ class LexikaAdapter:
 
     async def get_token(self) -> str:
         """Get current valid JWT token, refreshing if needed."""
-        if self._token_expires_at > 0 and (self._token_expires_at - time.time() < 300):
+        needs_refresh = not self._jwt_token or (
+            self._token_expires_at > 0 and self._token_expires_at - time.time() < 300
+        )
+        if needs_refresh:
             await self.refresh_token()
         return self._jwt_token
 
@@ -263,7 +266,13 @@ class LexikaAdapter:
                 self._ws_listen_task = asyncio.create_task(self._ws_listen_loop())
 
                 # Wait for connection to be fully established
-                await asyncio.wait_for(self._ws_connected.wait(), timeout=15)
+                try:
+                    await asyncio.wait_for(self._ws_connected.wait(), timeout=15)
+                except asyncio.TimeoutError:
+                    raise RuntimeError(
+                        "WebSocket handshake timed out (JWT token invalid or expired? "
+                        "Check session cookie / LEXIKA_JWT_TOKEN)"
+                    )
                 logger.info("WebSocket connected successfully")
 
             except Exception as e:
@@ -461,13 +470,23 @@ class LexikaAdapter:
     # ── HTTP Send Message ─────────────────────────────────────────
 
     async def _send_message(self, payload: dict) -> dict:
-        """Send POST to /messages/asking-ai."""
+        """Send POST to /messages/asking-ai.
+
+        Returns the JSON body even on 4xx/5xx — Lexika error bodies carry
+        success=false + message (e.g. SUBSCRIPTION_NOT_SUPPORT_IT), which the
+        callers surface to the client instead of a bare HTTP error.
+        """
         async with self._make_client(timeout=120) as client:
             resp = await client.post(
                 f"{self.base_url}{self.chat_endpoint}", json=payload
             )
-            resp.raise_for_status()
-            return resp.json()
+            try:
+                return resp.json()
+            except Exception:
+                resp.raise_for_status()
+                raise RuntimeError(
+                    f"Lexika API returned non-JSON response (status {resp.status_code})"
+                )
 
     # ── Non-streaming Request ─────────────────────────────────────
 
