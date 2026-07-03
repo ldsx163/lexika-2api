@@ -1,0 +1,14 @@
+# 凭据与本地配置（切勿提交）
+.env
+*.har
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# IDE / 系统
+.idea/
+.vscode/
+.DS_Store
